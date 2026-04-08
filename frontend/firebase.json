@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "gethsemanechoir-7f162",
     "public": "dist",
     "ignore": [
       "firebase.json",
