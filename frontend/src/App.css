@@ -1,0 +1,8 @@
+/* App-level overrides — all design tokens live in index.css */
+/* Spin utility used by loading states */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 0.7s linear infinite;
+}
