@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Search, Filter, Plus, Play, MoreVertical, Music2,
   Loader2, Trash2, Pencil, X, Database, ChevronDown,
-  Tag, Globe, Timer, Music
+  Tag, Globe, Timer, Music, Eye
 } from 'lucide-react';
 import { fetchAllSongs, seedDatabase } from '../utils/aiLogic';
+import DocumentViewModal from '../components/DocumentViewModal';
 import { db } from '../firebase';
 import { collection, addDoc, deleteDoc, updateDoc, doc } from 'firebase/firestore';
 
@@ -57,6 +58,7 @@ const SongLibrary = () => {
   // Modal
   const [isModalOpen, setIsModalOpen]   = useState(false);
   const [editingId, setEditingId]       = useState(null);
+  const [viewingSong, setViewingSong]   = useState(null);
   const [formData, setFormData]         = useState(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError]       = useState('');
@@ -314,6 +316,7 @@ const SongLibrary = () => {
             isLast={idx === filteredSongs.length - 1}
             activeOptionsId={activeOptionsId}
             setActiveOptionsId={setActiveOptionsId}
+            onView={(song) => setViewingSong(song)}
             onEdit={openEditModal}
             onDelete={handleDelete}
           />
@@ -334,13 +337,20 @@ const SongLibrary = () => {
           onClose={closeModal}
         />
       )}
+
+      {/* Document View Modal */}
+      <DocumentViewModal
+        song={viewingSong}
+        isOpen={!!viewingSong}
+        onClose={() => setViewingSong(null)}
+      />
     </div>
   );
 };
 
 // ─── Song Row ─────────────────────────────────────────────────────────────────
 
-const SongRow = ({ song, isLast, activeOptionsId, setActiveOptionsId, onEdit, onDelete }) => {
+const SongRow = ({ song, isLast, activeOptionsId, setActiveOptionsId, onView, onEdit, onDelete }) => {
   const isOpen = activeOptionsId === song.id;
 
   return (
@@ -423,6 +433,11 @@ const SongRow = ({ song, isLast, activeOptionsId, setActiveOptionsId, onEdit, on
               zIndex: 20, minWidth: '150px',
               display: 'flex', flexDirection: 'column',
             }}>
+              <PopoverBtn
+                icon={<Eye size={13} />}
+                label="View Lyrics"
+                onClick={() => { onView(song); setActiveOptionsId(null); }}
+              />
               <PopoverBtn
                 icon={<Pencil size={13} />}
                 label="Edit Song"

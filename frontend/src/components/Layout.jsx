@@ -1,9 +1,9 @@
 import React from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Home, Calendar, Music, BookTemplate, CalendarDays, FolderOpen } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Home, Calendar, Music, BookTemplate, CalendarDays, FolderOpen, ExternalLink } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { to: '/', icon: Home, label: 'Dashboard', end: true },
+  { to: '/dashboard', icon: Home, label: 'Dashboard', end: true },
   { to: '/planner', icon: Calendar, label: 'Mass Planner' },
   { to: '/library', icon: Music, label: 'Song Library' },
   { to: '/templates', icon: BookTemplate, label: 'Templates' },
@@ -12,7 +12,7 @@ const NAV_ITEMS = [
 ];
 
 const PAGE_LABELS = {
-  '/': 'Dashboard',
+  '/dashboard': 'Dashboard',
   '/planner': 'Mass Planner',
   '/library': 'Song Library',
   '/templates': 'Templates',
@@ -62,6 +62,25 @@ const Layout = () => {
             Church Music Manager System v1.0<br />
             © 2026 Gethsemane Choir
           </div>
+          <NavLink
+            to="/"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              marginTop: '0.75rem',
+              fontSize: '0.72rem',
+              color: 'rgba(255,255,255,0.45)',
+              textDecoration: 'none',
+              letterSpacing: '0.05em',
+              transition: 'color 0.18s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.85)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.45)'}
+          >
+            <ExternalLink size={12} />
+            View Choir Homepage
+          </NavLink>
         </div>
       </aside>
 
