@@ -1,24 +1,116 @@
-import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CalendarDays, Plus, CheckCircle2, AlertCircle } from 'lucide-react';
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSunday, isToday } from 'date-fns';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, CalendarDays, Plus, CheckCircle2, AlertCircle, Save, FileText } from 'lucide-react';
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSunday, isToday, parseISO } from 'date-fns';
+import SongSelectorModal from '../components/SongSelectorModal';
+import PresentationViewer from '../components/PresentationViewer';
+import { fetchAllSongs } from '../utils/aiLogic';
 
-const MASSES = {
-  '2026-04-12': { label: '2nd Sunday of Easter', status: 'planned' },
-  '2026-04-19': { label: '3rd Sunday of Easter', status: 'planned' },
-  '2026-04-26': { label: '4th Sunday of Easter', status: 'pending' },
-  '2026-05-03': { label: '5th Sunday of Easter', status: 'pending' },
-  '2026-05-10': { label: '6th Sunday of Easter', status: 'none' },
-};
+const CATEGORY_ORDER = [
+  'Entrance', 'Penitential Act', 'Gloria', 'Responsorial Psalm',
+  'Alleluia', 'Offertory', 'Sanctus', 'Agnus Dei', 'Communion', 'Recessional'
+];
+
+import { getMasses, saveMasses } from '../utils/massStorage';
 
 const CalendarPage = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [massesData, setMassesData] = useState(() => getMasses());
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  const [allSongs, setAllSongs] = useState([]);
+  const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
+  const [activeSwapCategory, setActiveSwapCategory] = useState(null);
+
+  const [isPresenting, setIsPresenting] = useState(false);
+  const [presentationSongs, setPresentationSongs] = useState([]);
+  const [currentSongIndex, setCurrentSongIndex] = useState(0);
+
+  useEffect(() => {
+    fetchAllSongs().then(data => setAllSongs(data)).catch(console.error);
+  }, []);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
   const startPad = getDay(monthStart); // 0 = Sunday
 
-  const sundays = days.filter(d => isSunday(d));
+  const today0 = new Date();
+  today0.setHours(0, 0, 0, 0);
+
+  // Compute upcoming events globally from massesData + current month sundays
+  const upcomingEventsMap = new Map();
+  // 1. Add all planned/pending masses from massesData that are >= today
+  Object.entries(massesData).forEach(([dStr, m]) => {
+    const dObj = parseISO(dStr);
+    if (dObj >= today0 && m.status !== 'none') {
+      upcomingEventsMap.set(dStr, { date: dObj, key: dStr, mass: m });
+    }
+  });
+  // 2. Add current month sundays if not already present
+  days.filter(d => isSunday(d) && d >= today0).forEach(d => {
+    const dStr = format(d, 'yyyy-MM-dd');
+    if (!upcomingEventsMap.has(dStr)) {
+      upcomingEventsMap.set(dStr, { date: d, key: dStr, mass: massesData[dStr] });
+    }
+  });
+  const upcomingEvents = Array.from(upcomingEventsMap.values())
+    .sort((a, b) => a.date - b.date)
+    .slice(0, 6);
+
+  const handleDayClick = (key) => {
+    if (!massesData[key]) {
+       setMassesData(prev => ({
+         ...prev,
+         [key]: { label: isSunday(parseISO(key)) ? 'Sunday Mass' : 'Special Mass', status: 'none', lineup: {} }
+       }));
+    }
+    setSelectedDate(key);
+  };
+
+  const openSwapModal = (category) => {
+    setActiveSwapCategory(category);
+    setIsSwapModalOpen(true);
+  };
+
+  const handleSwapSong = (song) => {
+    if (!activeSwapCategory || !selectedDate) return;
+    setMassesData(prev => ({
+      ...prev,
+      [selectedDate]: {
+        ...prev[selectedDate],
+        status: prev[selectedDate].status === 'none' ? 'pending' : prev[selectedDate].status,
+        lineup: {
+          ...prev[selectedDate].lineup,
+          [activeSwapCategory]: song
+        }
+      }
+    }));
+    setIsSwapModalOpen(false);
+    setActiveSwapCategory(null);
+  };
+
+  const startPresentation = (categoryKey) => {
+    const mass = massesData[selectedDate];
+    if (!mass || !mass.lineup) return;
+    
+    // Filter out valid song objects with lyrics
+    const songsWithLyrics = Object.values(mass.lineup).filter(s => s && typeof s === 'object' && s.lyrics != null);
+    if (songsWithLyrics.length === 0) {
+      alert("None of the scheduled songs have lyrics attached yet.");
+      return;
+    }
+    setPresentationSongs(songsWithLyrics);
+    
+    const targetSong = mass.lineup[categoryKey];
+    let actualStartIndex = 0;
+    if (targetSong) {
+       const foundIndex = songsWithLyrics.findIndex(s => s.id === targetSong.id);
+       if(foundIndex !== -1) actualStartIndex = foundIndex;
+    }
+    
+    setCurrentSongIndex(actualStartIndex);
+    setIsPresenting(true);
+  };
 
   return (
     <div>
@@ -90,35 +182,39 @@ const CalendarPage = () => {
 
             {days.map((day, idx) => {
               const key = format(day, 'yyyy-MM-dd');
-              const mass = MASSES[key];
+              const mass = massesData[key];
               const isSun = isSunday(day);
               const isCurrentDay = isToday(day);
               const colPos = (startPad + idx) % 7;
               const isLastCol = colPos === 6;
+              const isSelected = selectedDate === key;
 
               return (
                 <div
                   key={key}
+                  onClick={() => handleDayClick(key)}
                   style={{
                     minHeight: 80,
                     padding: '0.5rem',
                     borderRight: isLastCol ? 'none' : '1px solid var(--border)',
                     borderBottom: '1px solid var(--border)',
-                    background: isCurrentDay ? 'var(--blue-50)' : 'transparent',
-                    cursor: isSun ? 'pointer' : 'default',
+                    background: isSelected ? 'var(--primary-subtle)' : isCurrentDay ? 'var(--blue-50)' : 'transparent',
+                    cursor: 'pointer',
                     transition: 'background var(--transition)',
                     position: 'relative',
+                    boxShadow: isSelected ? 'inset 0 0 0 2px var(--primary)' : 'none'
                   }}
-                  onMouseEnter={e => { if (isSun) e.currentTarget.style.background = 'var(--primary-subtle)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = isCurrentDay ? 'var(--blue-50)' : 'transparent'; }}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--primary-subtle)'; }}
+                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = isCurrentDay ? 'var(--blue-50)' : 'transparent'; }}
                 >
                   <div style={{
                     fontSize: '0.8rem',
-                    fontWeight: isCurrentDay ? 800 : isSun ? 600 : 400,
-                    color: isCurrentDay ? 'var(--white)' : isSun ? 'var(--primary)' : 'var(--text-sub)',
+                    fontWeight: isCurrentDay ? 800 : isSun || mass ? 600 : 400,
+                    color: isCurrentDay ? 'var(--white)' : isSun || (mass && mass.status !== 'none') ? 'var(--primary)' : 'var(--text-sub)',
                     width: 24, height: 24,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: isCurrentDay ? 'var(--primary)' : 'transparent',
+                    borderRadius: isCurrentDay ? '50%' : '0'
                   }}>
                     {format(day, 'd')}
                   </div>
@@ -133,6 +229,7 @@ const CalendarPage = () => {
                       color:      mass.status === 'planned' ? 'white'          : mass.status === 'pending' ? '#92400e'  : 'var(--text-muted)',
                       lineHeight: 1.4,
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      borderRadius: '4px'
                     }}>
                       {mass.label}
                     </div>
@@ -155,34 +252,36 @@ const CalendarPage = () => {
                 { color: 'var(--text-muted)', bg: 'var(--gray-100)', label: 'No Lineup Yet', textColor: 'var(--text-muted)' },
               ].map(item => (
                 <div key={item.label} className="flex items-center gap-2">
-                  <div style={{ width: 12, height: 12, background: item.bg, flexShrink: 0 }} />
+                  <div style={{ width: 12, height: 12, background: item.bg, flexShrink: 0, borderRadius: '2px' }} />
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-sub)' }}>{item.label}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Upcoming Sundays List */}
+          {/* Upcoming Events List */}
           <div className="card stagger-3" style={{ padding: 0 }}>
             <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
-              <h3 style={{ fontSize: '0.85rem', fontWeight: 700 }}>Upcoming Sundays</h3>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 700 }}>Upcoming Events</h3>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {sundays.slice(0, 5).map((sunday, i) => {
-                const key = format(sunday, 'yyyy-MM-dd');
-                const mass = MASSES[key];
+              {upcomingEvents.map((evt, i) => {
+                const { key, date, mass } = evt;
+                const isSelected = selectedDate === key;
                 return (
                   <div
                     key={key}
+                    onClick={() => handleDayClick(key)}
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '0.875rem 1.25rem',
                       borderBottom: i < 4 ? '1px solid var(--border)' : 'none',
                       cursor: 'pointer',
                       transition: 'background var(--transition)',
+                      background: isSelected ? 'var(--primary-subtle)' : 'transparent'
                     }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--gray-50)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--gray-50)'; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <div className="flex items-center gap-3">
                       <div style={{
@@ -192,16 +291,17 @@ const CalendarPage = () => {
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                         fontSize: '0.55rem', fontWeight: 800, textTransform: 'uppercase',
                         letterSpacing: '0.04em',
+                        borderRadius: '6px'
                       }}>
-                        <span>{format(sunday, 'MMM')}</span>
-                        <span style={{ fontSize: '1rem', lineHeight: 1 }}>{format(sunday, 'd')}</span>
+                        <span>{format(date, 'MMM')}</span>
+                        <span style={{ fontSize: '1rem', lineHeight: 1 }}>{format(date, 'd')}</span>
                       </div>
                       <div>
                         <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                          {mass?.label ?? 'Sunday Mass'}
+                          {mass?.label ?? (isSunday(date) ? 'Sunday Mass' : 'Special Mass')}
                         </div>
                         <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
-                          {format(sunday, 'EEE, MMM d')}
+                          {format(date, 'EEE, MMM d')}
                         </div>
                       </div>
                     </div>
@@ -219,6 +319,102 @@ const CalendarPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Selected Lineup Editor */}
+      {selectedDate && massesData[selectedDate] && (
+        <div className="card stagger-4" style={{ marginTop: '1.5rem', padding: '1.5rem', borderColor: 'var(--primary)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.25rem' }}>
+                Mass Lineup Editing
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
+                <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{massesData[selectedDate].label}</span>
+                <span style={{ margin: '0 0.5rem' }}>•</span>
+                {format(parseISO(selectedDate), 'EEEE, MMMM do, yyyy')}
+              </p>
+            </div>
+            <div className="flex gap-2">
+               <button className="btn btn-secondary">
+                 Cancel
+               </button>
+               <button className="btn btn-primary" onClick={() => {
+                 const newMassesData = {
+                   ...massesData,
+                   [selectedDate]: {
+                     ...massesData[selectedDate],
+                     status: 'planned'
+                   }
+                 };
+                 setMassesData(newMassesData);
+                 saveMasses(newMassesData);
+                 alert('Lineup saved successfully!');
+               }}>
+                 <Save size={16}/>
+                 Save Lineup
+               </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)', gap: '1rem' }}>
+            {CATEGORY_ORDER.map(cat => {
+              const currentSongObj = massesData[selectedDate].lineup?.[cat];
+              const hasSong = !!currentSongObj;
+              const isObject = typeof currentSongObj === 'object';
+              const displayTitle = isObject ? currentSongObj.title : currentSongObj || '';
+
+              return (
+                <div key={cat} style={{ 
+                  display: 'flex', alignItems: 'center', padding: '0.75rem 1rem', 
+                  background: 'var(--gray-50)', borderRadius: '8px', border: '1px solid var(--border)' 
+                }}>
+                  <div style={{ width: '200px', flexShrink: 0 }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      {cat}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {hasSong ? (
+                      <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-main)' }}>{displayTitle}</div>
+                    ) : (
+                      <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No song chosen</div>
+                    )}
+                    
+                    <div className="flex gap-2">
+                      {isObject && currentSongObj.lyrics && (
+                        <button className="btn btn-icon btn-secondary" onClick={() => startPresentation(cat)} title="View Lyrics">
+                          <FileText size={15}/>
+                        </button>
+                      )}
+                      <button className="btn btn-sm btn-secondary" onClick={() => openSwapModal(cat)}>
+                        {hasSong ? 'Swap' : 'Choose Song'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {isSwapModalOpen && (
+        <SongSelectorModal
+          category={activeSwapCategory}
+          allSongs={allSongs}
+          onSelect={handleSwapSong}
+          onClose={() => setIsSwapModalOpen(false)}
+        />
+      )}
+
+      {isPresenting && (
+        <PresentationViewer 
+          songs={presentationSongs} 
+          initialSongIndex={currentSongIndex} 
+          onClose={() => setIsPresenting(false)} 
+        />
+      )}
     </div>
   );
 };

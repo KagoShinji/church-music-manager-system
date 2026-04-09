@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Calendar, Music, BookTemplate, CalendarDays, FolderOpen, ExternalLink } from 'lucide-react';
+import { Home, Calendar, Music, BookTemplate, CalendarDays, FolderOpen, ExternalLink, Menu, X } from 'lucide-react';
 
 const NAV_ITEMS = [
   { to: '/dashboard', icon: Home, label: 'Dashboard', end: true },
@@ -22,15 +22,30 @@ const PAGE_LABELS = {
 
 const Layout = () => {
   const location = useLocation();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
+
   const currentPage = PAGE_LABELS[location.pathname] ?? 'Dashboard';
   const now = new Date();
   const formatted = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   return (
     <div className="flex">
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="sidebar-overlay"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-header">
+      <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
+        <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div className="sidebar-brand">
             <div className="sidebar-brand-icon">
               <Music size={20} color="white" />
@@ -40,6 +55,13 @@ const Layout = () => {
               <span className="sidebar-brand-sub">Music Manager System</span>
             </div>
           </div>
+          <button 
+            className="mobile-close-btn" 
+            onClick={() => setIsMobileMenuOpen(false)}
+            aria-label="Close menu"
+          >
+            <X size={24} color="rgba(255,255,255,0.7)" />
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -88,10 +110,19 @@ const Layout = () => {
       <main className="main-content w-full">
         {/* Top bar */}
         <div className="topbar">
-          <div className="topbar-breadcrumb">
-            <span>Home</span>
-            <span className="sep">/</span>
-            <span className="current">{currentPage}</span>
+          <div className="topbar-left">
+            <button 
+              className="mobile-menu-btn"
+              onClick={() => setIsMobileMenuOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu size={22} />
+            </button>
+            <div className="topbar-breadcrumb">
+              <span>Home</span>
+              <span className="sep">/</span>
+              <span className="current">{currentPage}</span>
+            </div>
           </div>
           <div className="topbar-actions">
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{formatted}</span>

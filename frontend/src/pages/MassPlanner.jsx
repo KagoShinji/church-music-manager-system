@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, Save, Download, Play, Plus, ChevronRight, MonitorPlay, FileText, X, ChevronLeft, Search, Music } from 'lucide-react';
-import { generateMassSongs, fetchAllSongs } from '../utils/aiLogic';
+import { generateMassSongs, fetchAllSongs, getSeason } from '../utils/aiLogic';
 import { format } from 'date-fns';
+import { getTemplates } from '../utils/templateStorage';
+import { saveMassDetails } from '../utils/massStorage';
 
 const CATEGORY_ORDER = [
   'Entrance', 'Penitential Act', 'Gloria', 'Responsorial Psalm',
@@ -20,6 +22,7 @@ const MassPlanner = () => {
   });
   const [lineup, setLineup] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [customLabel, setCustomLabel] = useState('');
 
   // Presentation State
   const [isPresenting, setIsPresenting] = useState(false);
@@ -35,6 +38,25 @@ const MassPlanner = () => {
     // Pre-fetch all songs so the swap modal is instantly ready
     fetchAllSongs().then(data => setAllSongs(data)).catch(console.error);
   }, []);
+
+  const [isSaving, setIsSaving] = useState(false);
+  
+  const handleSaveMass = () => {
+    if (!lineup) return;
+    setIsSaving(true);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const massDetails = {
+      label: customLabel.trim() || (lineup ? lineup.season : '') || 'Mass',
+      status: 'planned',
+      lineup: lineup.lineup
+    };
+    saveMassDetails(dateStr, massDetails);
+    
+    setTimeout(() => {
+      setIsSaving(false);
+      alert('Mass lineup saved! You can view it in the Calendar.');
+    }, 400);
+  };
 
   const openSwapModal = (category) => {
     setActiveSwapCategory(category);
@@ -75,8 +97,30 @@ const MassPlanner = () => {
     setIsPresenting(true);
   };
 
+  const handleUseTemplate = (template) => {
+    const lineupObj = {};
+    if (template.categories) {
+      template.categories.forEach(cat => {
+        // Use default song if it exists, otherwise null
+        lineupObj[cat] = (template.defaultSongs && template.defaultSongs[cat]) ? template.defaultSongs[cat] : null;
+      });
+    }
+    setLineup({
+      season: getSeason(date),
+      date,
+      lineup: lineupObj
+    });
+  };
+
   useEffect(() => {
-    if (searchParams.get('auto') === 'true') handleGenerate();
+    if (searchParams.get('auto') === 'true') {
+      handleGenerate();
+    } else if (searchParams.get('template')) {
+      const templateId = parseInt(searchParams.get('template'));
+      const template = getTemplates().find(t => t.id === templateId);
+      if (template) handleUseTemplate(template);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const handleGenerate = async () => {
@@ -102,7 +146,9 @@ const MassPlanner = () => {
         <div className="flex gap-2">
           {lineup && (
             <>
-              <button className="btn btn-secondary"><Save size={16} /> Save</button>
+              <button className="btn btn-secondary" onClick={handleSaveMass} disabled={isSaving}>
+                <Save size={16} /> {isSaving ? 'Saving...' : 'Save'}
+              </button>
               <button className="btn btn-secondary"><Download size={16} /> Export</button>
               <button className="btn btn-primary btn-lg" onClick={() => startPresentation(0)}>
                 <MonitorPlay size={18} /> Present Mass
@@ -110,10 +156,28 @@ const MassPlanner = () => {
             </>
           )}
           {!lineup && (
-            <button className="btn btn-primary btn-lg" onClick={handleGenerate} disabled={isGenerating}>
-              <RefreshCw size={18} className={isGenerating ? 'animate-spin' : ''} />
-              Auto-Generate Lineup
-            </button>
+            <div className="flex gap-2">
+              <button className="btn btn-primary btn-lg" onClick={handleGenerate} disabled={isGenerating}>
+                <RefreshCw size={18} className={isGenerating ? 'animate-spin' : ''} />
+                Auto-Generate Lineup
+              </button>
+              <select 
+                 className="btn btn-secondary btn-lg" 
+                 style={{ cursor: 'pointer' }}
+                 onChange={(e) => {
+                    if(e.target.value) {
+                        const template = getTemplates().find(t => t.id === parseInt(e.target.value));
+                        if (template) handleUseTemplate(template);
+                    }
+                 }}
+                 defaultValue=""
+              >
+                 <option value="" disabled>Choose Template...</option>
+                 {getTemplates().map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                 ))}
+              </select>
+            </div>
           )}
         </div>
       </div>
@@ -148,6 +212,17 @@ const MassPlanner = () => {
               }}>
                 {lineup ? lineup.season : 'Select a date above'}
               </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: '1.25rem' }}>
+              <label className="form-label">Lineup Name (Optional)</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="e.g. Easter Youth Mass"
+                value={customLabel}
+                onChange={e => setCustomLabel(e.target.value)}
+              />
             </div>
           </div>
 
@@ -193,11 +268,29 @@ const MassPlanner = () => {
                 <RefreshCw size={28} color="var(--primary)" />
               </div>
               <h3 style={{ fontSize: '1.05rem' }}>No lineup generated</h3>
-              <p>Click the button above to auto-generate an intelligent song lineup for this mass based on the liturgical season.</p>
-              <button className="btn btn-primary btn-lg mt-4" onClick={handleGenerate} disabled={isGenerating}>
-                <RefreshCw size={18} className={isGenerating ? 'animate-spin' : ''} />
-                Generate Now
-              </button>
+              <p>Click the button below to auto-generate an intelligent song lineup for this mass based on the liturgical season, or select a pre-defined template.</p>
+              <div className="flex gap-3 mt-4" style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button className="btn btn-primary btn-lg" onClick={handleGenerate} disabled={isGenerating}>
+                  <RefreshCw size={18} className={isGenerating ? 'animate-spin' : ''} />
+                  Generate Now
+                </button>
+                <select 
+                   className="btn btn-secondary btn-lg" 
+                   style={{ cursor: 'pointer' }}
+                   onChange={(e) => {
+                      if(e.target.value) {
+                          const template = getTemplates().find(t => t.id === parseInt(e.target.value));
+                          if (template) handleUseTemplate(template);
+                      }
+                   }}
+                   defaultValue=""
+                >
+                   <option value="" disabled>Or choose a template...</option>
+                   {getTemplates().map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                   ))}
+                </select>
+              </div>
             </div>
           ) : (
             <div style={{ padding: '1rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
