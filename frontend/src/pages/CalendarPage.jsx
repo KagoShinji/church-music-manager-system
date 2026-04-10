@@ -58,12 +58,18 @@ const CalendarPage = () => {
     .slice(0, 6);
 
   const handleDayClick = (key) => {
-    if (!massesData[key]) {
-       setMassesData(prev => ({
-         ...prev,
-         [key]: { label: isSunday(parseISO(key)) ? 'Sunday Mass' : 'Special Mass', status: 'none', lineup: {} }
-       }));
+    let updatedMasses = { ...massesData };
+
+    if (selectedDate && selectedDate !== key && updatedMasses[selectedDate]?.status === 'none') {
+      delete updatedMasses[selectedDate];
     }
+
+    if (!updatedMasses[key]) {
+       updatedMasses[key] = { label: isSunday(parseISO(key)) ? 'Sunday Mass' : 'Special Mass', status: 'none', lineup: {} };
+    }
+    
+    setMassesData(updatedMasses);
+    saveMasses(updatedMasses);
     setSelectedDate(key);
   };
 
@@ -74,17 +80,19 @@ const CalendarPage = () => {
 
   const handleSwapSong = (song) => {
     if (!activeSwapCategory || !selectedDate) return;
-    setMassesData(prev => ({
-      ...prev,
+    const newMassesData = {
+      ...massesData,
       [selectedDate]: {
-        ...prev[selectedDate],
-        status: prev[selectedDate].status === 'none' ? 'pending' : prev[selectedDate].status,
+        ...massesData[selectedDate],
+        status: massesData[selectedDate].status === 'none' ? 'pending' : massesData[selectedDate].status,
         lineup: {
-          ...prev[selectedDate].lineup,
+          ...massesData[selectedDate].lineup,
           [activeSwapCategory]: song
         }
       }
-    }));
+    };
+    setMassesData(newMassesData);
+    saveMasses(newMassesData);
     setIsSwapModalOpen(false);
     setActiveSwapCategory(null);
   };
@@ -328,15 +336,49 @@ const CalendarPage = () => {
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.25rem' }}>
                 Mass Lineup Editing
               </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
-                <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{massesData[selectedDate].label}</span>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0, display: 'flex', alignItems: 'center' }}>
+                <input
+                  style={{
+                    fontWeight: 600, color: 'var(--primary)',
+                    background: 'transparent', border: 'none', borderBottom: '1px dashed var(--primary)',
+                    outline: 'none', padding: '0 0.1rem',
+                  }}
+                  value={massesData[selectedDate].label}
+                  onChange={(e) => {
+                    const newMassesData = {
+                      ...massesData,
+                      [selectedDate]: { ...massesData[selectedDate], label: e.target.value }
+                    };
+                    setMassesData(newMassesData);
+                    saveMasses(newMassesData);
+                  }}
+                />
                 <span style={{ margin: '0 0.5rem' }}>•</span>
                 {format(parseISO(selectedDate), 'EEEE, MMMM do, yyyy')}
-              </p>
+              </div>
             </div>
             <div className="flex gap-2">
-               <button className="btn btn-secondary">
-                 Cancel
+               <button className="btn btn-secondary" style={{ color: 'var(--danger)', borderColor: 'var(--danger-subtle)' }} onClick={() => {
+                 if (window.confirm("Are you sure you want to delete this mass?")) {
+                   const newMassesData = { ...massesData };
+                   delete newMassesData[selectedDate];
+                   setMassesData(newMassesData);
+                   saveMasses(newMassesData);
+                   setSelectedDate(null);
+                 }
+               }}>
+                 Delete
+               </button>
+               <button className="btn btn-secondary" onClick={() => {
+                 let updatedMasses = { ...massesData };
+                 if (updatedMasses[selectedDate]?.status === 'none') {
+                   delete updatedMasses[selectedDate];
+                   setMassesData(updatedMasses);
+                   saveMasses(updatedMasses);
+                 }
+                 setSelectedDate(null);
+               }}>
+                 Close
                </button>
                <button className="btn btn-primary" onClick={() => {
                  const newMassesData = {
@@ -360,7 +402,7 @@ const CalendarPage = () => {
             {CATEGORY_ORDER.map(cat => {
               const currentSongObj = massesData[selectedDate].lineup?.[cat];
               const hasSong = !!currentSongObj;
-              const isObject = typeof currentSongObj === 'object';
+              const isObject = currentSongObj !== null && typeof currentSongObj === 'object';
               const displayTitle = isObject ? currentSongObj.title : currentSongObj || '';
 
               return (
